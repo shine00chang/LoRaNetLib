@@ -5,13 +5,14 @@
 #include <AESLib.h>
 
 #define MAP_SIZE 20
+#define ADJ_LIST_SIZE 10
 #define MSG_SIZE 10
 #define HDR_DATA 1
 #define HDR_ADJ  2
 
-
-extern AESLib aesLib;
 extern char msgbuf[64];
+extern char dec_msgbuf[64];
+extern uint16_t msglen;
 
 struct Packet {
     uint8_t header = 0;
@@ -34,11 +35,9 @@ public:
 class Lib {
 public:  
     static void init ();
-    static void test(char* enc, uint16_t len);
     static bool parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t* pId);
     static char* encodePacket(Packet* packet, uint16_t* len);
-    static char* encodePacketForHTTP(Packet* packet, uint16_t* len);
-    static char* constructAdjPkt(uint16_t nodeId, uint16_t packetId, uint16_t* adj, uint16_t* len);
+    static char* constructAdjPkt(uint16_t nodeId, uint16_t packetId, uint16_t* adj, uint16_t* len, bool gateway = false);
     static void printPacket(Packet* packet);
 };
 

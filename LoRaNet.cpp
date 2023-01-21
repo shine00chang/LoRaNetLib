@@ -14,6 +14,8 @@ char ciphertextbuf[64] = {0};
 #endif
 
 char msgbuf[64] = {0};
+char dec_msgbuf[64] = {0};
+uint16_t msglen = 0;
 
 int16_t Map::get (uint16_t k) {
     int i = 0;
@@ -87,30 +89,6 @@ uint16_t decrypt(char* msg, uint16_t msgLen) {
 }
 #endif
 
-void Lib::test (char* buf, uint16_t len) {
-    len = decrypt(buf, len);
-    memcpy(buf, cleartextbuf, len);
-    
-    Serial.print(" Recv MSG, size: ");
-    Serial.print(len);
-    Serial.print(": [");
-    for (int i=0; i<len; i++) {
-        Serial.print((uint8_t) buf[i]);
-        Serial.print(", ");
-    }
-    Serial.println("]");
-
-    Packet packet = Packet();
-    int bufCnt = 0;
-    packet.header = extractAsInt(buf, bufCnt, 1);    bufCnt += 1;
-    packet.srcId = extractAsInt(buf, bufCnt, 2);     bufCnt += 2;
-    packet.id = extractAsInt(buf, bufCnt, 2);        bufCnt += 2;
-    packet.temp = extractAsInt(buf, bufCnt, 1);      bufCnt += 1;
-    packet.humidity = extractAsInt(buf, bufCnt, 1);  bufCnt += 1;
-
-    Lib::printPacket(&packet);
-}
-
 // Parses packet from raw string. Returns null if invalid format.
 bool Lib::parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t* pId) { 
     // Parse message into args array, without using 'String' objects.
@@ -124,28 +102,28 @@ bool Lib::parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t
     }
     memcpy(msgbuf, buf, len);
 #ifdef ENCRYPT 
-    len = decrypt(buf, len);
-    len = 16;
-    memcpy(buf, cleartextbuf, len);
+    msglen = decrypt(buf, len);
+    msglen = 16;
+    memcpy(dec_msgbuf, cleartextbuf, len);
 #endif
-     
+    /* 
     Serial.print("Recv MSG: [");
     for (int i=0; i<len; i++) {
         Serial.print((uint8_t) buf[i]);
         Serial.print(", ");
     }
     Serial.println("] ");
-     
+     */
     
     int bufCnt = 0;
-    *header = extractAsInt(buf, bufCnt, 1);    bufCnt += 1;
+    *header = extractAsInt(dec_msgbuf, bufCnt, 1);    bufCnt += 1;
   
     if (*header > 2) {
         Serial.println("Invalid header.");
         return false;
     }
-    *srcId = extractAsInt(buf, bufCnt, 2);     bufCnt += 2;
-    *pId = extractAsInt(buf, bufCnt, 2);       bufCnt += 2;
+    *srcId = extractAsInt(dec_msgbuf, bufCnt, 2);     bufCnt += 2;
+    *pId = extractAsInt(dec_msgbuf, bufCnt, 2);       bufCnt += 2;
     return true;
 }
 
@@ -172,7 +150,7 @@ char* Lib::encodePacket (Packet* packet, uint16_t* len) {
     cnt += writeIntAt(buf, cnt, packet->humidity, 1); 
     cnt = sizeof(buf);
 
-    /*
+    
     Serial.print("Encoding MSG: ");
     Lib::printPacket(packet);
     Serial.print(" sized ");
@@ -183,7 +161,7 @@ char* Lib::encodePacket (Packet* packet, uint16_t* len) {
       Serial.print(", ");
     }
     Serial.println("] ");
-     */
+     
 #ifdef ENCRYPT
     *len = encrypt(buf, cnt);
     char* out = (char*) malloc(*len);
@@ -197,22 +175,12 @@ char* Lib::encodePacket (Packet* packet, uint16_t* len) {
 #endif
 }
 
-char* Lib::encodePacketForHTTP (Packet* packet, uint16_t* len) {
-    if (packet == nullptr) return nullptr;
-    char* buf = (char*) malloc(MSG_SIZE);
-    int cnt = 0;
-    cnt += sprintf(buf+cnt, "%d/", packet->header);
-    cnt += sprintf(buf+cnt, "%d/%d/", packet->srcId, packet->id);
-    cnt += sprintf(buf+cnt, "%d/%d/\0", packet->temp, packet->humidity);
-    *len = cnt;
-    return buf;
 
-}
-
-char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, uint16_t* len) {
+char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, uint16_t* len, bool gateway) {
     if (adj == nullptr) return nullptr;
     char* buf = (char*) malloc(16);
-    
+    memset(buf, 0, 16);
+
     uint16_t cnt = 0;
     cnt += writeIntAt(buf, cnt, HDR_ADJ, 1); 
     cnt += writeIntAt(buf, cnt, nodeId, 2);
@@ -220,27 +188,37 @@ char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, u
     for (int i=0; i<*len; i++) {
         cnt += writeIntAt(buf, cnt, adj[i], 2);
     }
-    /*
-    Serial.print("Encoding ADJ PKT: ");
-    Serial.print(" sized ");
+    
+    Serial.print("Encoding ADJ PKT. list:[");
+    for (int i=0; i<*len; i++) {
+        Serial.print(adj[i]);
+        Serial.print(", ");
+    }
+    Serial.print("]");
+    Serial.print(", sized ");
     Serial.print(cnt);
     Serial.print(" as: [ ");
     for (int i=0; i<cnt; i++) {
       Serial.print((uint8_t) buf[i]);
       Serial.print(", ");
     }
-    Serial.println("] ");
-    */
+    Serial.print("] ");
+    
+    if (gateway) {
+        *len = cnt;
+        return buf;
+    }
+
 #ifdef ENCRYPT
-    *len = encrypt(buf, cnt);
+    *len = encrypt(buf, 16);
     char* out = (char*) malloc(*len);
     memcpy(out, ciphertextbuf, *len);
+    
+    free(buf);
     return out;
 #else 
-    *len = sizeof(buf);
-    char* out = (char*) malloc(*len);
-    memcpy(out, buf, *len);
-    return out;
+    *len = cnt;
+    return buf;
 #endif
 }
 
