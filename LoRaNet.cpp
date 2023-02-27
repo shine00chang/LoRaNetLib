@@ -4,7 +4,7 @@
 #include "AESLib.h"
 #include <LoRa.h>;
 
-#define ENCRYPT
+//#define ENCRYPT
 
 #ifdef ENCRYPT
 AESLib aesLib;
@@ -14,8 +14,6 @@ char ciphertextbuf[64] = {0};
 #endif
 
 char msgbuf[64] = {0};
-char dec_msgbuf[64] = {0};
-uint16_t msglen = 0;
 
 int16_t Map::get (uint16_t k) {
     int i = 0;
@@ -36,7 +34,9 @@ void Map::set (uint16_t k, int16_t v) {
 }; 
 
 void Lib::init () {
-    aesLib.set_paddingmode((paddingMode)0);
+#ifdef ENCRYPT
+	aesLib.set_paddingmode((paddingMode)0);
+#endif
 }
 
 uint16_t extractAsInt (char* buf, int index, int len) {
@@ -49,40 +49,13 @@ uint16_t extractAsInt (char* buf, int index, int len) {
 }
 
 #ifdef ENCRYPT
-uint16_t encrypt(char* msg, uint16_t msgLen) {
+uint16_t _encrypt(char* msg, uint16_t msgLen) {
     byte iv[N_BLOCK] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
     return aesLib.encrypt((byte*)msg, msgLen, (byte*)ciphertextbuf, aes_key, sizeof(aes_key), iv);
 }
 
 uint16_t decrypt(char* msg, uint16_t msgLen) {
-    /*
-    // Base 64 decoding. TODO
-    byte b64decoded[50] = {0};
-    base64_decode((char*) b64decoded, msg, msgLen);
-    
-    Serial.print("b64 decoded, len: ");
-    Serial.print(strlen(b64decoded));
-    Serial.print(" [");
-    for (int i=0; i<strlen(b64decoded); i++) {
-        Serial.print((uint8_t) b64decoded[i]);
-        Serial.print(", ");
-    }
-    Serial.println("]");
-
-    byte iv[N_BLOCK] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
-    uint16_t olen = aesLib.decrypt(b64decoded, strlen(b64decoded), (byte*)cleartextbuf, aes_key, sizeof(aes_key), iv);
-
-    Serial.print("cleartext, len: ");
-    Serial.print(olen);
-    Serial.print(" [");
-    for (int i=0; i<olen; i++) {
-        Serial.print((uint8_t) cleartextbuf[i]);
-        Serial.print(", ");
-    }
-    Serial.println("]");
-    return olen;
-    */
-    byte iv[N_BLOCK] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
+   byte iv[N_BLOCK] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
     uint16_t olen = aesLib.decrypt((byte*) msg, msgLen, (byte*)cleartextbuf, aes_key, sizeof(aes_key), iv);
 
     return olen;
@@ -90,9 +63,9 @@ uint16_t decrypt(char* msg, uint16_t msgLen) {
 #endif
 
 // Parses packet from raw string. Returns null if invalid format.
-bool Lib::parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t* pId) { 
+bool Lib::parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t* prevId, uint16_t* pId, uint16_t* olen) { 
     // Parse message into args array, without using 'String' objects.
-    // Format: "{(u8)header}{(u16)srcId}{(u16)id}{(i8)temp}{(u8)humidity}";
+    // Format: "{(u8)header}{(u16)srcId}{(u16)id}{(i8)temp}{(u8)humidity}{(u16)mq2}";
     
     uint16_t len = 0;
     char buf[packetSize] = {0};
@@ -100,56 +73,65 @@ bool Lib::parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t
         char c = (char) LoRa.read();
         buf[len++] = c;
     }
-    memcpy(msgbuf, buf, len);
 #ifdef ENCRYPT 
-    msglen = decrypt(buf, len);
-    msglen = 16;
-    memcpy(dec_msgbuf, cleartextbuf, len);
+    *olen = decrypt(buf, len);
+    memcpy(msgbuf, cleartextbuf, *olen);
+#else 
+	*olen = len;
+    memcpy(msgbuf, buf, len);
 #endif
-    /* 
+	     
     Serial.print("Recv MSG: [");
-    for (int i=0; i<len; i++) {
+    for (int i=0; i<*olen; i++) {
         Serial.print((uint8_t) buf[i]);
         Serial.print(", ");
     }
     Serial.println("] ");
-     */
+      
     
     int bufCnt = 0;
-    *header = extractAsInt(dec_msgbuf, bufCnt, 1);    bufCnt += 1;
+    *header = extractAsInt(msgbuf, bufCnt, 1);    bufCnt += 1;
   
     if (*header > 2) {
         Serial.println("Invalid header.");
         return false;
     }
-    *srcId = extractAsInt(dec_msgbuf, bufCnt, 2);     bufCnt += 2;
-    *pId = extractAsInt(dec_msgbuf, bufCnt, 2);       bufCnt += 2;
+    *srcId = extractAsInt(msgbuf, bufCnt, 2);     bufCnt += 2;
+    *prevId = extractAsInt(msgbuf, bufCnt, 2);    bufCnt += 2;
+    *pId = extractAsInt(msgbuf, bufCnt, 2);       bufCnt += 2;
     return true;
 }
 
-int writeIntAt (char* buf, int cnt, int val, int len) {
+int writeIntAt (char* buf, int cnt, uint16_t val, int len) {
   uint8_t mask = ((1 << 8) - 1);
+  
   for (int i=0; i<len; i++) {
     uint8_t c = val & mask;
     val >>= 8;
-
     buf[cnt + (len - i - 1)] = c;
   }
   return len;
 }
 
+char* Lib::getForwardBuf (uint16_t nodeId, uint16_t len) {
+	writeIntAt(msgbuf, 3, nodeId, 2);
+	uint16_t t;
+	return Lib::encryptBuf(msgbuf, len, &t);
+}
 char* Lib::encodePacket (Packet* packet, uint16_t* len) {
     if (packet == nullptr) return nullptr;
+    packet->header = HDR_DATA;
 
     char buf[16] = {0}; 
     uint16_t cnt = 0;
-    cnt += writeIntAt(buf, cnt, HDR_DATA, 1);
+    cnt += writeIntAt(buf, cnt, packet->header, 1);
     cnt += writeIntAt(buf, cnt, packet->srcId, 2);    
+    cnt += writeIntAt(buf, cnt, packet->prevId, 2);    
     cnt += writeIntAt(buf, cnt, packet->id, 2);        
     cnt += writeIntAt(buf, cnt, packet->temp, 1);      
     cnt += writeIntAt(buf, cnt, packet->humidity, 1); 
+    cnt += writeIntAt(buf, cnt, packet->mq2, 2); 
     cnt = sizeof(buf);
-
     
     Serial.print("Encoding MSG: ");
     Lib::printPacket(packet);
@@ -157,20 +139,24 @@ char* Lib::encodePacket (Packet* packet, uint16_t* len) {
     Serial.print(cnt);
     Serial.print(" as: [ ");
     for (int i=0; i<cnt; i++) {
-      Serial.print((uint8_t) buf[i]);
-      Serial.print(", ");
+        Serial.print((uint8_t) buf[i]);
+        Serial.print(", ");
     }
     Serial.println("] ");
-     
+
+	return Lib::encryptBuf(buf, cnt, len);
+}
+
+char* Lib::encryptBuf (char* buf, uint16_t len, uint16_t* olen) {
 #ifdef ENCRYPT
-    *len = encrypt(buf, cnt);
-    char* out = (char*) malloc(*len);
-    memcpy(out, ciphertextbuf, *len);
+    *olen = _encrypt(buf, len);
+    char* out = (char*) malloc(*olen);
+    memcpy(out, ciphertextbuf, *olen);
     return out;
 #else 
-    *len = sizeof(buf);
-    char* out = (char*) malloc(*len);
-    memcpy(out, buf, *len);
+    *olen = 16;
+	char* out = (char*) malloc(*olen);
+    memcpy(out, buf, *olen);
     return out;
 #endif
 }
@@ -183,6 +169,7 @@ char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, u
 
     uint16_t cnt = 0;
     cnt += writeIntAt(buf, cnt, HDR_ADJ, 1); 
+    cnt += writeIntAt(buf, cnt, nodeId, 2);
     cnt += writeIntAt(buf, cnt, nodeId, 2);
     cnt += writeIntAt(buf, cnt, packetId, 2);
     for (int i=0; i<*len; i++) {
@@ -210,7 +197,7 @@ char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, u
     }
 
 #ifdef ENCRYPT
-    *len = encrypt(buf, 16);
+    *len = _encrypt(buf, 16);
     char* out = (char*) malloc(*len);
     memcpy(out, ciphertextbuf, *len);
     
@@ -224,11 +211,19 @@ char* Lib::constructAdjPkt (uint16_t nodeId, uint16_t packetId, uint16_t* adj, u
 
 void Lib::printPacket (Packet* packet) {
     if (packet == nullptr) return;
-    char buf[20];
-    int cnt = 0;
-    cnt += sprintf(buf+cnt, "h=%d:", packet->header);
-    cnt += sprintf(buf+cnt, "%d/%d/", packet->srcId, packet->id);
-    cnt += sprintf(buf+cnt, "%d/%d/\0", packet->temp, packet->humidity);
-    Serial.print((char*) buf);
+    Serial.print("h=");
+    Serial.print(packet->header);
+    Serial.print(":");
+    Serial.print(packet->srcId);
+    Serial.print("/");
+	Serial.print(packet->prevId);
+    Serial.print("/");
+    Serial.print(packet->id);
+    Serial.print("/");
+    Serial.print(packet->temp);
+    Serial.print("/");
+    Serial.print(packet->humidity);
+    Serial.print("/");
+    Serial.print(packet->mq2);
 }
 
