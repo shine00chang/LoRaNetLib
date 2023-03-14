@@ -38,12 +38,13 @@ public:
 };
 
 class Lib {
+private:
+	static char* encryptBuf(char* buf, uint16_t len, uint16_t* olen);
 public:  
     static void init ();
     static bool parsePacket(int packetSize, uint8_t* header, uint16_t* srcId, uint16_t* prevId, uint16_t* pId, uint16_t* olen);
 	static char* getForwardBuf(uint16_t nodeId, uint16_t len);
     static char* encodePacket(Packet* packet, uint16_t* len);
-    static char* encryptBuf(char* buf, uint16_t len, uint16_t* olen);
     static char* constructAdjPkt(uint16_t nodeId, uint16_t packetId, uint16_t* adj, uint16_t* len, bool gateway = false);
     static void printPacket(Packet* packet);
 };
