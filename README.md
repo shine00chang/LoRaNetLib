@@ -1,6 +1,9 @@
 # LoRaNet Library
 ### Custom Library used to build the LoRaNet sensor
 ---
+# Main repository: 
+Refer here for details regarding the LoRaNet project: [LoRaNet](https://github.com/beranki/loRAFire/)
+
 # API:
 ### Packet:
 A structure specifying the fields in a data packet. Check source files for details.
